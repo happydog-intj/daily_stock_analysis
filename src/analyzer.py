@@ -1919,7 +1919,127 @@ class GeminiAnalyzer:
 | TTM 股息率 | {ttm_yield} | 公式：近12个月每股现金分红 / 当前价格 × 100% |
 | TTM 分红事件数 | {ttm_count} | |
 
-> 若上述字段为 N/A 或缺失，请明确写“数据缺失，无法判断”，禁止编造。
+> 若上述字段为 N/A 或缺失，请明确写"数据缺失，无法判断"，禁止编造。
+"""
+
+        # 添加三表核心指标
+        three_stmt_block = (
+            fundamental_context.get("three_statements", {})
+            if isinstance(fundamental_context, dict)
+            else {}
+        )
+        three_stmt_status = three_stmt_block.get("status", "not_supported") if isinstance(three_stmt_block, dict) else "not_supported"
+        three_stmt_data = three_stmt_block.get("data", {}) if isinstance(three_stmt_block, dict) else {}
+        if three_stmt_status == "ok" and isinstance(three_stmt_data, dict) and three_stmt_data:
+            inc = three_stmt_data.get("income", {}) or {}
+            bal = three_stmt_data.get("balance", {}) or {}
+            cf  = three_stmt_data.get("cashflow", {}) or {}
+            rd  = three_stmt_data.get("report_date", "N/A") or "N/A"
+
+            def _fmt_pct(v):
+                return f"{v:.2f}%" if isinstance(v, (int, float)) else "N/A"
+
+            def _fmt_x(v):
+                return f"{v:.2f}x" if isinstance(v, (int, float)) else "N/A"
+
+            def _fmt_bn(v):
+                return f"{v:.2f}亿" if isinstance(v, (int, float)) else "N/A"
+
+            def _fmt_ratio(v):
+                return f"{v:.4f}" if isinstance(v, (int, float)) else "N/A"
+
+            prompt += f"""\
+### 三表核心指标（最新报告期：{rd}）
+**利润质量**
+| 指标 | 数值 | 解读要点 |
+|------|------|----------|
+| 毛利率 | {_fmt_pct(inc.get('gross_margin'))} | >40%为高毛利 |
+| 净利率 | {_fmt_pct(inc.get('net_margin'))} | 行业差异大 |
+| 销售费用占比 | {_fmt_pct(inc.get('sell_ratio'))} | |
+| 管理费用占比 | {_fmt_pct(inc.get('admin_ratio'))} | |
+| 研发费用占比 | {_fmt_pct(inc.get('rd_ratio'))} | |
+| 现金含金量 | {_fmt_ratio(cf.get('cash_quality'))} | >1为优质，<0.5警惕 |
+
+**偿债能力**
+| 指标 | 数值 | 解读要点 |
+|------|------|----------|
+| 资产负债率 | {_fmt_pct(bal.get('debt_ratio'))} | <60%较安全 |
+| 流动比率 | {_fmt_x(bal.get('current_ratio'))} | >1为安全 |
+| 货币资金 | {_fmt_bn(bal.get('cash'))} | |
+| 应收账款 | {_fmt_bn(bal.get('accounts_recv'))} | |
+| 存货 | {_fmt_bn(bal.get('inventory'))} | |
+
+**现金流**
+| 指标 | 数值 | 解读要点 |
+|------|------|----------|
+| 经营现金流 | {_fmt_bn(cf.get('op_cf'))} | |
+| 投资现金流 | {_fmt_bn(cf.get('inv_cf'))} | |
+| 筹资现金流 | {_fmt_bn(cf.get('fin_cf'))} | |
+| 自由现金流 | {_fmt_bn(cf.get('free_cf'))} | 正值为优 |
+
+> 若上述字段为 N/A 或缺失，请明确写"数据缺失，无法判断"，禁止编造。
+"""
+
+        # 添加财报趋势（近4期历史对比）
+        hist_fin = (
+            fundamental_context.get("historical_financials", {})
+            if isinstance(fundamental_context, dict)
+            else {}
+        )
+        if isinstance(hist_fin, dict) and hist_fin.get("status") == "ok":
+            periods = hist_fin.get("periods", [])
+            revenues = hist_fin.get("revenue", [])
+            revenue_yoys = hist_fin.get("revenue_yoy", [])
+            net_profits = hist_fin.get("net_profit", [])
+            net_profit_yoys = hist_fin.get("net_profit_yoy", [])
+            gross_margins = hist_fin.get("gross_margin", [])
+            roes = hist_fin.get("roe", [])
+
+            def _fmt_period(period_str: str) -> str:
+                """Convert 2024-09-30 to 2024Q3, 2024-12-31 to 2024Q4, etc."""
+                try:
+                    parts = str(period_str).split("-")
+                    if len(parts) == 3:
+                        year, month, _ = parts
+                        m = int(month)
+                        q = (m - 1) // 3 + 1
+                        return f"{year}Q{q}"
+                except Exception:
+                    pass
+                return str(period_str)
+
+            def _fmt_val(v: Any, suffix: str = "") -> str:
+                if v is None:
+                    return "N/A"
+                try:
+                    fv = float(v)
+                    if suffix == "%":
+                        sign = "+" if fv > 0 else ""
+                        return f"{sign}{fv:.1f}%"
+                    return f"{fv:.2f}"
+                except (TypeError, ValueError):
+                    return "N/A"
+
+            if periods:
+                header = "| 期间 | 营收(亿) | 营收同比 | 净利润(亿) | 净利润同比 | 毛利率 | ROE |"
+                sep = "|------|---------|---------|-----------|-----------|--------|-----|"
+                rows = []
+                for i, period in enumerate(periods):
+                    rev = _fmt_val(revenues[i] if i < len(revenues) else None)
+                    rev_yoy = _fmt_val(revenue_yoys[i] if i < len(revenue_yoys) else None, "%")
+                    np_ = _fmt_val(net_profits[i] if i < len(net_profits) else None)
+                    np_yoy = _fmt_val(net_profit_yoys[i] if i < len(net_profit_yoys) else None, "%")
+                    gm = _fmt_val(gross_margins[i] if i < len(gross_margins) else None)
+                    roe_ = _fmt_val(roes[i] if i < len(roes) else None)
+                    rows.append(f"| {_fmt_period(period)} | {rev} | {rev_yoy} | {np_} | {np_yoy} | {gm}% | {roe_}% |")
+                table_rows = "\n".join(rows)
+                prompt += f"""
+### 财报趋势（近4期）
+{header}
+{sep}
+{table_rows}
+
+> 趋势分析要点：营收增速是否加速/减速？净利润增速是否与营收匹配？毛利率趋势？ROE 稳定性？
 """
 
         # 添加增长质量（来自 growth 块）

@@ -1943,6 +1943,7 @@ class DataFetcherManager:
             "capital_flow",
             "dragon_tiger",
             "boards",
+            "three_statements",
         )
         blocks = {
             block: self._build_fundamental_block(
@@ -2017,6 +2018,7 @@ class DataFetcherManager:
             "capital_flow": {},
             "dragon_tiger": {},
             "boards": {},
+            "three_statements": {},
             "coverage": {},
             "source_chain": [],
             "errors": [],
@@ -2254,6 +2256,45 @@ class DataFetcherManager:
             result_ctx["status"] = "partial"
         else:
             result_ctx["status"] = "ok"
+
+        # three statements (income / balance / cash flow)
+        if not is_etf and remaining_seconds > 0:
+            three_stmt_budget = min(fetch_timeout, remaining_seconds)
+            three_stmt_start = time.time()
+            try:
+                three_stmt_payload, three_stmt_err, three_stmt_ms = self._run_with_retry(
+                    lambda: self._fundamental_adapter.get_three_statements(stock_code),
+                    three_stmt_budget,
+                    "three_statements",
+                )
+                _consume_budget(int((time.time() - three_stmt_start) * 1000))
+                if not isinstance(three_stmt_payload, dict):
+                    three_stmt_payload = {"status": "failed", "data": {}}
+            except Exception as _ts_exc:
+                three_stmt_payload = {"status": "failed", "data": {}}
+                three_stmt_err = str(_ts_exc)
+            result_ctx["three_statements"] = three_stmt_payload
+        else:
+            result_ctx["three_statements"] = {"status": "not_supported", "data": {}}
+
+        # historical financials (multi-period trend) - only for A-share non-ETF
+        if not is_etf and market == "cn" and remaining_seconds > 0:
+            hist_fin_budget = min(fetch_timeout, remaining_seconds)
+            hist_fin_start = time.time()
+            try:
+                hist_fin_payload, _hist_err, hist_fin_ms = self._run_with_retry(
+                    lambda: self._fundamental_adapter.get_historical_financials(stock_code),
+                    hist_fin_budget,
+                    "historical_financials",
+                )
+                _consume_budget(int((time.time() - hist_fin_start) * 1000))
+                if not isinstance(hist_fin_payload, dict):
+                    hist_fin_payload = {"status": "failed"}
+            except Exception as _hf_exc:
+                hist_fin_payload = {"status": "failed"}
+            result_ctx["historical_financials"] = hist_fin_payload
+        else:
+            result_ctx["historical_financials"] = {"status": "not_supported"}
 
         result_ctx["elapsed_ms"] = int((time.time() - start_ts) * 1000)
         if cache_ttl > 0 and self._should_cache_fundamental_context(result_ctx):

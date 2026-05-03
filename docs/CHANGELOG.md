@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [新功能] 自定义 Webhook 支持 `CUSTOM_WEBHOOK_BODY_TEMPLATE` JSON body 模板，便于适配 AstrBot、NapCat 和自建推送服务。
 - [新功能] 大盘复盘结构化区块新增大盘红绿灯结论，基于盘面温度输出 green/yellow/red、核心原因和操作建议。
+- [新功能] P2 接入完整三张财报表：AkshareFundamentalAdapter 新增 get_three_statements() 方法，通过 stock_financial_report_sina 抓取利润表、资产负债表、现金流量表核心指标（毛利率、净利率、资产负债率、流动比率、自由现金流、现金含金量等），集成到 fundamental_context['three_statements']，并在 analyzer.py 的 _format_prompt() 中新增「三表核心指标」prompt 块；港股/美股返回 not_supported。
 - [修复] 统一持仓快照输出现价/市值/浮盈亏/收益率与价格元信息，并为 LLM 渠道测试补充结构化诊断与设置页排障提示。
 - [文档] 补充 LLM 渠道编辑器的官方来源、依赖兼容窗口、保存时的运行时模型清理规则，以及旧配置回退路径说明。
 - [测试] 补齐 task_queue 运行时配置同步回归证据，明确 `tests/test_task_queue_config_sync.py` 作为本轮验收项。

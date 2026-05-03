@@ -413,6 +413,337 @@ class AkshareFundamentalAdapter:
         result["status"] = "partial" if has_content else "not_supported"
         return result
 
+    def get_three_statements(self, stock_code: str) -> Dict[str, Any]:
+        """
+        Fetch income statement, balance sheet and cash flow statement core metrics
+        via akshare (stock_financial_report_sina).  A-share only; returns
+        status='not_supported' for HK/US stocks.  Always fail-open.
+        """
+        result: Dict[str, Any] = {
+            "status": "not_supported",
+            "data": {},
+        }
+        try:
+            import akshare as ak
+        except Exception:
+            result["status"] = "failed"
+            return result
+
+        # Only A-share 6-digit codes are supported by this source.
+        code = _normalize_code(stock_code)
+        if not re.match(r"^\d{6}$", code):
+            return result  # HK / US – not_supported
+
+        def _v(df: pd.DataFrame, col: str, row_idx: int = 0):
+            """Safe value extractor from a df row."""
+            if df is None or df.empty:
+                return None
+            if col not in df.columns:
+                return None
+            val = df[col].iloc[row_idx]
+            return _safe_float(val)
+
+        def _pct(numerator, denominator) -> Optional[float]:
+            if numerator is None or denominator is None:
+                return None
+            try:
+                d = float(denominator)
+                if d == 0:
+                    return None
+                return round(float(numerator) / d * 100, 4)
+            except (TypeError, ValueError):
+                return None
+
+        def _bn(val) -> Optional[float]:
+            """Convert raw yuan to 亿元, rounded to 2 dp."""
+            if val is None:
+                return None
+            try:
+                return round(float(val) / 1e8, 2)
+            except (TypeError, ValueError):
+                return None
+
+        try:
+            # ── 利润表 ────────────────────────────────────────────────
+            income_df = ak.stock_financial_report_sina(stock=code, symbol="利润表")
+            income: Dict[str, Any] = {}
+            if income_df is not None and not income_df.empty:
+                revenue      = _v(income_df, "营业总收入")
+                op_cost      = _v(income_df, "营业成本")
+                op_profit    = _v(income_df, "营业利润")
+                net_profit   = _v(income_df, "净利润")
+                sell_exp     = _v(income_df, "销售费用")
+                admin_exp    = _v(income_df, "管理费用")
+                rd_exp       = _v(income_df, "研发费用")
+                report_date_raw = income_df["报告日"].iloc[0] if "报告日" in income_df.columns else None
+                # Normalise report date: e.g. 20251231 -> 2025-12-31
+                report_date: Optional[str] = None
+                if report_date_raw is not None:
+                    s = str(report_date_raw).strip()
+                    if re.match(r"^\d{8}$", s):
+                        report_date = f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+                    else:
+                        report_date = _normalize_report_date(report_date_raw)
+
+                gross_profit = (float(revenue) - float(op_cost)) if (revenue is not None and op_cost is not None) else None
+                gross_margin = _pct(gross_profit, revenue)
+                net_margin   = _pct(net_profit, revenue)
+                sell_ratio   = _pct(sell_exp, revenue)
+                admin_ratio  = _pct(admin_exp, revenue)
+                rd_ratio     = _pct(rd_exp, revenue)
+
+                income = {
+                    "revenue":       _bn(revenue),
+                    "op_cost":       _bn(op_cost),
+                    "gross_margin":  gross_margin,
+                    "op_profit":     _bn(op_profit),
+                    "net_profit":    _bn(net_profit),
+                    "sell_expense":  _bn(sell_exp),
+                    "admin_expense": _bn(admin_exp),
+                    "rd_expense":    _bn(rd_exp),
+                    "sell_ratio":    sell_ratio,
+                    "admin_ratio":   admin_ratio,
+                    "rd_ratio":      rd_ratio,
+                    "net_margin":    net_margin,
+                    "report_date":   report_date,
+                }
+
+            # ── 资产负债表 ────────────────────────────────────────────
+            balance_df = ak.stock_financial_report_sina(stock=code, symbol="资产负债表")
+            balance: Dict[str, Any] = {}
+            if balance_df is not None and not balance_df.empty:
+                total_assets    = _v(balance_df, "资产总计")
+                total_liab      = _v(balance_df, "负债合计")
+                equity          = _v(balance_df, "所有者权益(或股东权益)合计")
+                curr_assets     = _v(balance_df, "流动资产合计")
+                curr_liab       = _v(balance_df, "流动负债合计")
+                cash            = _v(balance_df, "货币资金")
+                # Prefer combined field; fallback to standalone
+                ar_val = _v(balance_df, "应收账款")
+                if ar_val is None:
+                    ar_val = _v(balance_df, "应收票据及应收账款")
+                inventory       = _v(balance_df, "存货")
+
+                debt_ratio      = _pct(total_liab, total_assets)
+                current_ratio: Optional[float] = None
+                if curr_assets is not None and curr_liab is not None:
+                    try:
+                        cl = float(curr_liab)
+                        current_ratio = round(float(curr_assets) / cl, 4) if cl != 0 else None
+                    except (TypeError, ValueError):
+                        pass
+
+                balance = {
+                    "total_assets":  _bn(total_assets),
+                    "total_liab":    _bn(total_liab),
+                    "net_assets":    _bn(equity),
+                    "debt_ratio":    debt_ratio,
+                    "curr_assets":   _bn(curr_assets),
+                    "curr_liab":     _bn(curr_liab),
+                    "current_ratio": current_ratio,
+                    "cash":          _bn(cash),
+                    "accounts_recv": _bn(ar_val),
+                    "inventory":     _bn(inventory),
+                }
+
+            # ── 现金流量表 ────────────────────────────────────────────
+            cf_df = ak.stock_financial_report_sina(stock=code, symbol="现金流量表")
+            cashflow: Dict[str, Any] = {}
+            if cf_df is not None and not cf_df.empty:
+                op_cf    = _v(cf_df, "经营活动产生的现金流量净额")
+                inv_cf   = _v(cf_df, "投资活动产生的现金流量净额")
+                fin_cf   = _v(cf_df, "筹资活动产生的现金流量净额")
+                capex    = _v(cf_df, "购建固定资产、无形资产和其他长期资产所支付的现金")
+
+                free_cf: Optional[float] = None
+                if op_cf is not None and capex is not None:
+                    try:
+                        free_cf = round((float(op_cf) - float(capex)) / 1e8, 2)
+                    except (TypeError, ValueError):
+                        pass
+
+                # Cash quality = operating CF / net profit
+                net_profit_for_cf = income.get("net_profit")  # already in 亿元
+                cash_quality: Optional[float] = None
+                if op_cf is not None and net_profit_for_cf is not None:
+                    try:
+                        np_bn = float(net_profit_for_cf)
+                        if np_bn != 0:
+                            cash_quality = round(float(op_cf) / 1e8 / np_bn, 4)
+                    except (TypeError, ValueError):
+                        pass
+
+                cashflow = {
+                    "op_cf":        _bn(op_cf),
+                    "inv_cf":       _bn(inv_cf),
+                    "fin_cf":       _bn(fin_cf),
+                    "free_cf":      free_cf,
+                    "cash_quality": cash_quality,
+                }
+
+            # Determine report_date: prefer income statement's, then balance sheet
+            report_date_final = (
+                income.get("report_date")
+                or (
+                    _normalize_report_date(balance_df["报告日"].iloc[0])
+                    if balance_df is not None and not balance_df.empty and "报告日" in balance_df.columns
+                    else None
+                )
+            )
+
+            has_data = bool(income or balance or cashflow)
+            result["status"] = "ok" if has_data else "failed"
+            result["data"] = {
+                "income":      income,
+                "balance":     balance,
+                "cashflow":    cashflow,
+                "report_date": report_date_final,
+            }
+
+        except Exception as exc:
+            logger.warning("get_three_statements(%s) failed: %s", stock_code, exc)
+            result["status"] = "failed"
+
+        return result
+
+    def get_historical_financials(self, stock_code: str, n_periods: int = 4) -> Dict[str, Any]:
+        """
+        Return multi-period (recent 4 quarters or annual) core financial metrics for trend analysis.
+
+        Only supported for A-share codes (港股/美股 not supported).
+
+        Returns a dict with key 'historical_financials' containing:
+          status: 'ok' | 'failed'
+          periods: list of period strings (YYYY-MM-DD)
+          revenue, net_profit, operating_cf: lists in 亿元
+          revenue_yoy, net_profit_yoy: lists in %
+          gross_margin, roe: lists in %
+          data_type: 'quarterly' | 'annual'
+        """
+        result: Dict[str, Any] = {
+            "status": "failed",
+            "periods": [],
+            "revenue": [],
+            "revenue_yoy": [],
+            "net_profit": [],
+            "net_profit_yoy": [],
+            "gross_margin": [],
+            "roe": [],
+            "operating_cf": [],
+            "data_type": "quarterly",
+        }
+
+        # Only A-share codes
+        code_upper = _safe_str(stock_code).upper()
+        if any(code_upper.startswith(pfx) for pfx in ("HK", "US")) or code_upper.endswith(".HK"):
+            return result
+
+        try:
+            import akshare as ak
+        except Exception as exc:
+            logger.warning("[historical_financials] akshare import failed: %s", exc)
+            return result
+
+        try:
+            df = ak.stock_financial_abstract(symbol=stock_code)
+        except Exception as exc:
+            logger.warning("[historical_financials] stock_financial_abstract(%s) failed: %s", stock_code, exc)
+            return result
+
+        if df is None or df.empty:
+            return result
+
+        try:
+            # Date columns are all columns except '选项' and '指标'
+            date_cols = [c for c in df.columns if c not in ("选项", "指标")]
+            if not date_cols:
+                return result
+
+            # Normalize date column names to YYYY-MM-DD
+            def _norm_date_col(raw: str) -> Optional[str]:
+                s = str(raw).strip()
+                # Format: 20240930 -> 2024-09-30
+                if len(s) == 8 and s.isdigit():
+                    return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+                # Already formatted
+                try:
+                    return pd.to_datetime(s).date().isoformat()
+                except Exception:
+                    return None
+
+            # Use first occurrence of each indicator (handle duplicate rows)
+            df_indexed = df.drop_duplicates(subset=["指标"]).set_index("指标")
+
+            # We need n_periods + 1 cols to compute YoY (but abstract df already has YoY)
+            # Use up to n_periods columns; skip NaT cols
+            valid_date_cols: List[str] = []
+            valid_norm_dates: List[str] = []
+            for col in date_cols:
+                nd = _norm_date_col(col)
+                if nd is not None:
+                    valid_date_cols.append(col)
+                    valid_norm_dates.append(nd)
+                if len(valid_date_cols) >= n_periods:
+                    break
+
+            if not valid_date_cols:
+                return result
+
+            def _get_indicator_values(indicator: str, cols: List[str]) -> List[Optional[float]]:
+                if indicator not in df_indexed.index:
+                    return [None] * len(cols)
+                row = df_indexed.loc[indicator]
+                vals: List[Optional[float]] = []
+                for col in cols:
+                    if col in row.index:
+                        v = row[col]
+                        f = _safe_float(v)
+                        vals.append(f)
+                    else:
+                        vals.append(None)
+                return vals
+
+            # Gross margin from abstract: row '毛利率', value is already in %
+            revenue_raw = _get_indicator_values("营业总收入", valid_date_cols)
+            net_profit_raw = _get_indicator_values("归母净利润", valid_date_cols)
+            operating_cf_raw = _get_indicator_values("经营现金流量净额", valid_date_cols)
+            revenue_yoy_raw = _get_indicator_values("营业总收入增长率", valid_date_cols)
+            net_profit_yoy_raw = _get_indicator_values("归属母公司净利润增长率", valid_date_cols)
+            roe_raw = _get_indicator_values("净资产收益率(ROE)", valid_date_cols)
+            gross_margin_raw = _get_indicator_values("毛利率", valid_date_cols)
+
+            def _to_yi(v: Optional[float]) -> Optional[float]:
+                """Convert yuan to 亿元 (÷1e8), round to 2 decimal places."""
+                if v is None:
+                    return None
+                return round(v / 1e8, 2)
+
+            def _round2(v: Optional[float]) -> Optional[float]:
+                return round(v, 2) if v is not None else None
+
+            result["periods"] = valid_norm_dates
+            result["revenue"] = [_to_yi(v) for v in revenue_raw]
+            result["net_profit"] = [_to_yi(v) for v in net_profit_raw]
+            result["operating_cf"] = [_to_yi(v) for v in operating_cf_raw]
+            result["revenue_yoy"] = [_round2(v) for v in revenue_yoy_raw]
+            result["net_profit_yoy"] = [_round2(v) for v in net_profit_yoy_raw]
+            result["roe"] = [_round2(v) for v in roe_raw]
+            result["gross_margin"] = [_round2(v) for v in gross_margin_raw]
+
+            # Determine data_type based on whether most periods end in -12-31 (annual)
+            annual_count = sum(1 for d in valid_norm_dates if d.endswith("-12-31"))
+            result["data_type"] = "annual" if annual_count > len(valid_norm_dates) / 2 else "quarterly"
+
+            # Consider ok if at least periods and revenue are non-empty
+            if result["periods"] and any(v is not None for v in result["revenue"]):
+                result["status"] = "ok"
+
+        except Exception as exc:
+            logger.warning("[historical_financials] processing failed for %s: %s", stock_code, exc)
+            result["status"] = "failed"
+
+        return result
+
     def get_capital_flow(self, stock_code: str, top_n: int = 5) -> Dict[str, Any]:
         """
         Return stock + sector capital flow.
