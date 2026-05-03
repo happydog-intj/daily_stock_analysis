@@ -689,6 +689,15 @@ class EfinanceFetcher(BaseFetcher):
                 total_mv=safe_float(row.get(total_mv_col)),  # 总市值
                 circ_mv=safe_float(row.get(circ_mv_col)),  # 流通市值
             )
+
+            # 反推股本结构：total_shares = total_mv / price，circ_shares = circ_mv / price
+            if quote.price and quote.price > 0:
+                if quote.total_mv is not None:
+                    quote.total_shares = round(quote.total_mv / quote.price)
+                if quote.circ_mv is not None:
+                    quote.circ_shares = round(quote.circ_mv / quote.price)
+                if quote.total_mv and quote.circ_mv and quote.total_mv > 0:
+                    quote.float_ratio = round(quote.circ_mv / quote.total_mv * 100, 2)
             
             logger.info(f"[实时行情-efinance] {stock_code} {quote.name}: 价格={quote.price}, 涨跌={quote.change_pct}%, "
                        f"量比={quote.volume_ratio}, 换手率={quote.turnover_rate}%")

@@ -1833,7 +1833,48 @@ class GeminiAnalyzer:
 | 市净率 | {rt.get('pb_ratio', 'N/A')} | |
 | 总市值 | {self._format_amount(rt.get('total_mv'))} | |
 | 流通市值 | {self._format_amount(rt.get('circ_mv'))} | |
+"""
+
+            # 股本结构与流通比例（独立数据块，明确引导 LLM 分析）
+            total_shares = rt.get('total_shares')
+            circ_shares = rt.get('circ_shares')
+            float_ratio = rt.get('float_ratio')
+
+            def _fmt_shares(v):
+                """将股数转为易读的亿股/万股格式"""
+                if v is None:
+                    return 'N/A'
+                v = float(v)
+                if v >= 1e8:
+                    return f"{v/1e8:.2f} 亿股"
+                elif v >= 1e4:
+                    return f"{v/1e4:.2f} 万股"
+                return f"{v:.0f} 股"
+
+            prompt += f"""
+### 股本结构与流通比例
+| 指标 | 数值 | 解读参考 |
+|------|------|----------|
+| 总股本 | {_fmt_shares(total_shares)} | |
+| 流通股本 | {_fmt_shares(circ_shares)} | |
+| **流通比例** | **{f"{float_ratio:.2f}%" if float_ratio is not None else "N/A"}** | <30%低流通易被控盘；>80%流通充分 |
+| 总市值 | {self._format_amount(rt.get('total_mv'))} | |
+| 流通市值 | {self._format_amount(rt.get('circ_mv'))} | |
+
+> **流通比例分析要点**：
+> - 流通比例 < 30%：高度控盘风险，少量资金即可拉升/打压，散户博弈难度大
+> - 流通比例 30%-60%：中等流通，需结合大股东减持动向判断
+> - 流通比例 > 60%：流通充分，庄家难以控盘，价格更趋向市场化
+> - 结合换手率和量比，判断当前是否存在异常资金行为
+"""
+
+            prompt += f"""
+### 中期走势参考
+| 指标 | 数值 | 解读 |
+|------|------|------|
 | 60日涨跌幅 | {rt.get('change_60d', 'N/A')}% | 中期表现 |
+| 52周最高 | {rt.get('high_52w', 'N/A')} 元 | |
+| 52周最低 | {rt.get('low_52w', 'N/A')} 元 | |
 """
 
         # 添加财报与分红（价值投资口径）

@@ -142,6 +142,11 @@ class UnifiedRealtimeQuote:
     pb_ratio: Optional[float] = None        # 市净率
     total_mv: Optional[float] = None        # 总市值(元)
     circ_mv: Optional[float] = None         # 流通市值(元)
+
+    # 股本结构
+    total_shares: Optional[float] = None    # 总股本(股)
+    circ_shares: Optional[float] = None     # 流通股本(股)
+    float_ratio: Optional[float] = None     # 流通比例(%) = circ_shares/total_shares*100
     
     # === 其他指标 ===
     change_60d: Optional[float] = None      # 60日涨跌幅(%)

@@ -913,6 +913,15 @@ class AkshareFetcher(BaseFetcher):
                 high_52w=safe_float(row.get('52周最高')),
                 low_52w=safe_float(row.get('52周最低')),
             )
+
+            # 反推股本结构：total_shares = total_mv / price，circ_shares = circ_mv / price
+            if quote.price and quote.price > 0:
+                if quote.total_mv is not None:
+                    quote.total_shares = round(quote.total_mv / quote.price)
+                if quote.circ_mv is not None:
+                    quote.circ_shares = round(quote.circ_mv / quote.price)
+                if quote.total_mv and quote.circ_mv and quote.total_mv > 0:
+                    quote.float_ratio = round(quote.circ_mv / quote.total_mv * 100, 2)
             
             logger.info(f"[实时行情-东财] {stock_code} {quote.name}: 价格={quote.price}, 涨跌={quote.change_pct}%, "
                        f"量比={quote.volume_ratio}, 换手率={quote.turnover_rate}%")
@@ -1443,6 +1452,75 @@ class AkshareFetcher(BaseFetcher):
             circuit_breaker.record_failure(sina_key, str(e))
             return None
     
+    def get_share_structure(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """
+        获取股本结构数据（总股本、流通股本、流通比例）
+
+        数据来源：ak.stock_individual_info_em()
+        包含：总股本、流通股本，可计算流通比例
+
+        Args:
+            stock_code: A 股代码（不支持港股/美股/ETF）
+
+        Returns:
+            dict with keys: total_shares, circ_shares, float_ratio
+            获取失败返回 None
+        """
+        import akshare as ak
+
+        if _is_us_code(stock_code) or _is_hk_code(stock_code) or _is_etf_code(stock_code):
+            logger.debug(f"[API跳过] {stock_code} 非A股，跳过股本结构获取")
+            return None
+
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+
+            logger.info(f"[API调用] ak.stock_individual_info_em({stock_code}) 获取股本结构...")
+            df = ak.stock_individual_info_em(symbol=stock_code)
+
+            if df is None or df.empty:
+                logger.info(f"[股本结构] {stock_code} 返回为空")
+                return None
+
+            # 转为 {item: value} 字典
+            info = dict(zip(df.iloc[:, 0], df.iloc[:, 1]))
+
+            # 解析总股本/流通股本（单位：股，原始值可能带"亿"/"万"等单位，需统一转换）
+            def _parse_shares(val) -> Optional[float]:
+                """将东财返回的股本值（可能是字符串或数字）统一转为股数（单位：股）"""
+                if val is None:
+                    return None
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return None
+
+            total_shares = _parse_shares(info.get('总股本'))
+            circ_shares = _parse_shares(info.get('流通股'))
+
+            if total_shares is None and circ_shares is None:
+                logger.info(f"[股本结构] {stock_code} 未找到总股本/流通股字段，可用字段: {list(info.keys())[:10]}")
+                return None
+
+            float_ratio = None
+            if total_shares and circ_shares and total_shares > 0:
+                float_ratio = round(circ_shares / total_shares * 100, 2)
+
+            result = {
+                'total_shares': total_shares,
+                'circ_shares': circ_shares,
+                'float_ratio': float_ratio,
+            }
+            logger.info(
+                f"[股本结构] {stock_code}: 总股本={total_shares}, 流通股={circ_shares}, 流通比例={float_ratio}%"
+            )
+            return result
+
+        except Exception as e:
+            logger.info(f"[API错误] 获取 {stock_code} 股本结构失败: {e}")
+            return None
+
     def get_chip_distribution(self, stock_code: str) -> Optional[ChipDistribution]:
         """
         获取筹码分布数据
