@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 补充 LLM 渠道编辑器的官方来源、依赖兼容窗口、保存时的运行时模型清理规则，以及旧配置回退路径说明。
 - [测试] 补齐 task_queue 运行时配置同步回归证据，明确 `tests/test_task_queue_config_sync.py` 作为本轮验收项。
 - [改进] Bot `/status` 展示统一 LLM 主模型、Agent 模型、渠道模式、YAML 配置和更多通知渠道状态。
+- [新功能] P3 多期财报历史对比：AkshareFundamentalAdapter 新增 get_historical_financials() 方法，通过 stock_financial_abstract 接口抓取近4期季度核心指标（营收、净利润、毛利率、ROE、经营现金流及同比增速），集成到 fundamental_context['historical_financials']，并在 analyzer.py 的 _format_prompt() 中新增「财报趋势（近4期）」Markdown 表格块；港股/美股/ETF 返回 not_supported，失败时不渲染。
 - [改进] Web LLM 渠道编辑器补齐 MiniMax 与火山方舟预设，并新增常用服务商 `.env` 模板速查文档。
 - [修复] 将 MiniMax 预设调整为官方 OpenAI-compatible Base URL 和当前模型示例，并补充 MiniMax、火山方舟、LiteLLM 兼容来源与回退说明。
 - [改进] Web LLM 渠道编辑器补齐 MiniMax 与火山方舟预设，并将常用服务商默认模型示例同步到 OpenAI、Claude、Gemini、Kimi、Qwen、GLM、MiniMax、豆包等官方当前推荐模型。
