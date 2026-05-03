@@ -33,6 +33,7 @@ export interface ReportMeta {
   currentPrice?: number;
   changePct?: number;
   modelUsed?: string;  // LLM model used for analysis
+  floatRatio?: number;  // 流通比例(%)
 }
 
 /** Sentiment label */

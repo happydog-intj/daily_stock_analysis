@@ -146,6 +146,32 @@ export const ReportOverview: React.FC<ReportOverviewProps> = ({
                       </span>
                     </div>
                   )}
+                  {/* 流通比例 */}
+                  {meta.floatRatio != null && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-xs text-muted-text">流通比例</span>
+                      <span
+                        className="text-xs font-semibold font-mono px-1.5 py-0.5 rounded"
+                        style={{
+                          backgroundColor: meta.floatRatio < 30
+                            ? 'rgba(239,68,68,0.12)'
+                            : meta.floatRatio < 60
+                              ? 'rgba(234,179,8,0.12)'
+                              : 'rgba(34,197,94,0.12)',
+                          color: meta.floatRatio < 30
+                            ? '#ef4444'
+                            : meta.floatRatio < 60
+                              ? '#ca8a04'
+                              : '#16a34a',
+                        }}
+                      >
+                        {meta.floatRatio.toFixed(2)}%
+                      </span>
+                      <span className="text-xs text-muted-text">
+                        {meta.floatRatio < 30 ? '低流通·易控盘' : meta.floatRatio < 60 ? '中等流通' : '流通充分'}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 mt-1.5">
                   <span className="home-accent-chip px-2 py-0.5 font-mono text-xs">

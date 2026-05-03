@@ -626,6 +626,9 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                     change_pct = realtime_quote_raw.get('change_pct')
                 if change_pct is None:
                     change_pct = realtime_quote_raw.get('pct_chg')
+                float_ratio = realtime_quote_raw.get('float_ratio')
+        else:
+            float_ratio = None
 
             # Build report from DB record so completed tasks return real data
             report_dict = AnalysisReport(
@@ -640,6 +643,7 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                     model_used=model_used,
                     current_price=current_price,
                     change_pct=change_pct,
+                    float_ratio=float_ratio,
                 ),
                 summary=ReportSummary(
                     sentiment_score=record.sentiment_score,

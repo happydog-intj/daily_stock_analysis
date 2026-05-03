@@ -166,6 +166,7 @@ class UnifiedRealtimeQuote:
             'volume_ratio', 'turnover_rate', 'amplitude',
             'open_price', 'high', 'low', 'pre_close',
             'pe_ratio', 'pb_ratio', 'total_mv', 'circ_mv',
+            'total_shares', 'circ_shares', 'float_ratio',
             'change_60d', 'high_52w', 'low_52w'
         ]
         for f in optional_fields:

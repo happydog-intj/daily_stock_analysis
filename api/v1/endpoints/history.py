@@ -243,7 +243,10 @@ def get_history_detail(
                 change_pct = realtime_quote_raw.get("change_pct")
             if change_pct is None:
                 change_pct = realtime_quote_raw.get("pct_chg")
-        
+            float_ratio = realtime_quote_raw.get("float_ratio")
+        else:
+            float_ratio = None
+
         raw_result = result.get("raw_result")
         if not isinstance(raw_result, dict):
             raw_result = {}
@@ -273,7 +276,8 @@ def get_history_detail(
             created_at=result.get("created_at"),
             current_price=current_price,
             change_pct=change_pct,
-            model_used=normalize_model_used(result.get("model_used"))
+            model_used=normalize_model_used(result.get("model_used")),
+            float_ratio=float_ratio,
         )
         
         summary = ReportSummary(

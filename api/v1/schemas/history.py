@@ -122,6 +122,7 @@ class ReportMeta(BaseModel):
     current_price: Optional[float] = Field(None, description="分析时股价")
     change_pct: Optional[float] = Field(None, description="分析时涨跌幅(%)")
     model_used: Optional[str] = Field(None, description="分析使用的 LLM 模型")
+    float_ratio: Optional[float] = Field(None, description="流通比例(%)")
 
 
 class ReportSummary(BaseModel):
