@@ -1922,6 +1922,72 @@ class GeminiAnalyzer:
 > 若上述字段为 N/A 或缺失，请明确写“数据缺失，无法判断”，禁止编造。
 """
 
+        # 添加增长质量（来自 growth 块）
+        growth_block = (
+            fundamental_context.get("growth", {})
+            if isinstance(fundamental_context, dict)
+            else {}
+        )
+        growth_data = (
+            growth_block.get("data", {})
+            if isinstance(growth_block, dict)
+            else {}
+        )
+        if isinstance(growth_data, dict) and growth_data:
+            revenue_yoy = growth_data.get("revenue_yoy", "N/A")
+            net_profit_yoy = growth_data.get("net_profit_yoy", "N/A")
+            gross_margin = growth_data.get("gross_margin", "N/A")
+            if any(v != "N/A" for v in [revenue_yoy, net_profit_yoy, gross_margin]):
+                prompt += f"""\
+### 增长质量
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 营收同比 | {revenue_yoy} | 单位：%，同比增速 |
+| 净利润同比 | {net_profit_yoy} | 单位：%，归母净利润同比增速 |
+| 毛利率 | {gross_margin} | 单位：%，反映定价权与成本控制 |
+
+> 若上述字段为 N/A 或缺失，请明确写"数据缺失，无法判断"，禁止编造。
+"""
+
+        # 添加业绩预告/快报（来自 earnings 块）
+        forecast_summary = earnings_data.get("forecast_summary", None) if isinstance(earnings_data, dict) else None
+        quick_report_summary = earnings_data.get("quick_report_summary", None) if isinstance(earnings_data, dict) else None
+        if forecast_summary or quick_report_summary:
+            prompt += f"""\
+### 业绩预告 / 快报
+| 类型 | 内容 |
+|------|------|
+| 业绩预告 | {forecast_summary if forecast_summary else 'N/A'} |
+| 业绩快报 | {quick_report_summary if quick_report_summary else 'N/A'} |
+
+> 若上述字段为 N/A 或缺失，请明确写"数据缺失，无法判断"，禁止编造。
+"""
+
+        # 添加机构/股东变化（来自 institution 块）
+        institution_block = (
+            fundamental_context.get("institution", {})
+            if isinstance(fundamental_context, dict)
+            else {}
+        )
+        institution_data = (
+            institution_block.get("data", {})
+            if isinstance(institution_block, dict)
+            else {}
+        )
+        if isinstance(institution_data, dict) and institution_data:
+            institution_holding_change = institution_data.get("institution_holding_change", "N/A")
+            top10_holder_change = institution_data.get("top10_holder_change", "N/A")
+            if any(v != "N/A" for v in [institution_holding_change, top10_holder_change]):
+                prompt += f"""\
+### 机构 / 股东变化
+| 指标 | 内容 | 说明 |
+|------|------|------|
+| 机构持股变化 | {institution_holding_change} | 最新期机构增减持情况 |
+| 前十大股东变化 | {top10_holder_change} | 前十大股东进出情况 |
+
+> 若上述字段为 N/A 或缺失，请明确写"数据缺失，无法判断"，禁止编造。
+"""
+
         # 添加筹码分布数据
         if 'chip' in context:
             chip = context['chip']

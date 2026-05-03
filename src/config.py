@@ -850,13 +850,13 @@ class Config:
     # 全局总开关；关闭时返回 not_supported 并保持主流程无变化
     enable_fundamental_pipeline: bool = True
     # 基本面阶段总预算（秒）
-    fundamental_stage_timeout_seconds: float = 1.5
+    fundamental_stage_timeout_seconds: float = 15
     # 单能力源调用超时（秒）
-    fundamental_fetch_timeout_seconds: float = 0.8
+    fundamental_fetch_timeout_seconds: float = 8
     # 单能力失败重试次数（已包含首次）
-    fundamental_retry_max: int = 1
+    fundamental_retry_max: int = 2
     # 基本面上下文短 TTL（秒）
-    fundamental_cache_ttl_seconds: int = 120
+    fundamental_cache_ttl_seconds: int = 300
     # 基本面缓存最大条目数（避免长时间运行内存增长）
     fundamental_cache_max_entries: int = 256
 
@@ -1547,20 +1547,20 @@ class Config:
             enable_fundamental_pipeline=os.getenv('ENABLE_FUNDAMENTAL_PIPELINE', 'true').lower() == 'true',
             fundamental_stage_timeout_seconds=parse_env_float(
                 os.getenv('FUNDAMENTAL_STAGE_TIMEOUT_SECONDS'),
-                1.5,
+                15.0,
                 field_name='FUNDAMENTAL_STAGE_TIMEOUT_SECONDS',
                 minimum=0.0,
             ),
             fundamental_fetch_timeout_seconds=parse_env_float(
                 os.getenv('FUNDAMENTAL_FETCH_TIMEOUT_SECONDS'),
-                0.8,
+                8.0,
                 field_name='FUNDAMENTAL_FETCH_TIMEOUT_SECONDS',
                 minimum=0.0,
             ),
-            fundamental_retry_max=parse_env_int(os.getenv('FUNDAMENTAL_RETRY_MAX'), 1, field_name='FUNDAMENTAL_RETRY_MAX', minimum=0),
+            fundamental_retry_max=parse_env_int(os.getenv('FUNDAMENTAL_RETRY_MAX'), 2, field_name='FUNDAMENTAL_RETRY_MAX', minimum=0),
             fundamental_cache_ttl_seconds=parse_env_int(
                 os.getenv('FUNDAMENTAL_CACHE_TTL_SECONDS'),
-                120,
+                300,
                 field_name='FUNDAMENTAL_CACHE_TTL_SECONDS',
                 minimum=0,
             ),
