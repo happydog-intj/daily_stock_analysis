@@ -267,6 +267,7 @@ class AkshareFundamentalAdapter:
     def _call_df_candidates(
         self,
         candidates: List[Tuple[str, Dict[str, Any]]],
+        per_candidate_timeout: float = 12.0,
     ) -> Tuple[Optional[pd.DataFrame], Optional[str], List[str]]:
         errors: List[str] = []
         try:
@@ -274,12 +275,20 @@ class AkshareFundamentalAdapter:
         except Exception as exc:
             return None, None, [f"import_akshare:{type(exc).__name__}"]
 
+        import concurrent.futures
+
         for func_name, kwargs in candidates:
             fn = getattr(ak, func_name, None)
             if fn is None:
                 continue
             try:
-                df = fn(**kwargs)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                    future = ex.submit(fn, **kwargs)
+                    try:
+                        df = future.result(timeout=per_candidate_timeout)
+                    except concurrent.futures.TimeoutError:
+                        errors.append(f"{func_name}:Timeout>{per_candidate_timeout}s")
+                        continue
                 if isinstance(df, pd.Series):
                     df = df.to_frame().T
                 if isinstance(df, pd.DataFrame) and not df.empty:
