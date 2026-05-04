@@ -151,6 +151,7 @@ class AnalysisService:
                 "report_language": report_language,
                 "current_price": result.current_price,
                 "change_pct": result.change_pct,
+                "float_ratio": getattr(result, "float_ratio", None),
                 "model_used": getattr(result, "model_used", None),
             },
             "summary": {
