@@ -774,6 +774,7 @@ def _build_analysis_report(
         current_price=meta_data.get("current_price"),
         change_pct=meta_data.get("change_pct"),
         model_used=normalize_model_used(meta_data.get("model_used")),
+        float_ratio=meta_data.get("float_ratio"),
     )
 
     summary = ReportSummary(

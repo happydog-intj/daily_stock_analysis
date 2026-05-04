@@ -642,6 +642,7 @@ class AnalysisResult:
     # ========== 价格数据（分析时快照）==========
     current_price: Optional[float] = None  # 分析时的股价
     change_pct: Optional[float] = None     # 分析时的涨跌幅(%)
+    float_ratio: Optional[float] = None   # 流通比例(%)
 
     # ========== 模型标记（Issue #528）==========
     model_used: Optional[str] = None  # 分析使用的 LLM 模型（完整名，如 gemini/gemini-2.0-flash）
@@ -684,6 +685,7 @@ class AnalysisResult:
             'error_message': self.error_message,
             'current_price': self.current_price,
             'change_pct': self.change_pct,
+            'float_ratio': self.float_ratio,
             'model_used': self.model_used,
         }
 
@@ -1699,6 +1701,9 @@ class GeminiAnalyzer:
                 result.market_snapshot = self._build_market_snapshot(context)
                 result.model_used = model_used
                 result.report_language = report_language
+                # 从 context 读取 float_ratio 写入 result，使 meta 能正确透传
+                _rt = context.get('realtime', {}) if isinstance(context, dict) else {}
+                result.float_ratio = _rt.get('float_ratio')
 
                 # 内容完整性校验（可选）
                 if not config.report_integrity_enabled:
