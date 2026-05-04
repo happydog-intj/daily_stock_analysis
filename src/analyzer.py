@@ -1885,7 +1885,7 @@ class GeminiAnalyzer:
             else {}
         )
         earnings_data = (
-            earnings_block.get("data", {})
+            earnings_block  # earnings dict is flat: {financial_report, forecast_summary, ...}
             if isinstance(earnings_block, dict)
             else {}
         )
@@ -2049,7 +2049,7 @@ class GeminiAnalyzer:
             else {}
         )
         growth_data = (
-            growth_block.get("data", {})
+            growth_block  # growth dict is flat: {revenue_yoy, net_profit_yoy, roe, gross_margin}
             if isinstance(growth_block, dict)
             else {}
         )

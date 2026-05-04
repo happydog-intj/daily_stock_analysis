@@ -574,6 +574,10 @@ class StockAnalysisPipeline:
                 'circ_mv': getattr(realtime_quote, 'circ_mv', None),
                 'change_60d': getattr(realtime_quote, 'change_60d', None),
                 'source': getattr(realtime_quote, 'source', None),
+                # 股本结构与流通比例
+                'total_shares': getattr(realtime_quote, 'total_shares', None),
+                'circ_shares': getattr(realtime_quote, 'circ_shares', None),
+                'float_ratio': getattr(realtime_quote, 'float_ratio', None),
             }
             # 移除 None 值以减少上下文大小
             enhanced['realtime'] = {k: v for k, v in enhanced['realtime'].items() if v is not None}
