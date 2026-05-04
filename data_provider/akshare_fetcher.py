@@ -1210,10 +1210,14 @@ class AkshareFetcher(BaseFetcher):
                 total_mv=safe_float(fields[45]) * 100000000 if len(fields) > 45 and fields[45] else None,  # 总市值(亿->元)
             )
             
+            # 根据流通市值/总市值计算流通比例
+            if quote.circ_mv and quote.total_mv and quote.total_mv > 0:
+                quote.float_ratio = round(quote.circ_mv / quote.total_mv * 100, 2)
+
             logger.info(
                 f"[实时行情-腾讯] {stock_code} {quote.name}: endpoint={TENCENT_REALTIME_ENDPOINT}, "
                 f"价格={quote.price}, 涨跌={quote.change_pct}%, 量比={quote.volume_ratio}, "
-                f"换手率={quote.turnover_rate}%, elapsed={api_elapsed:.2f}s"
+                f"换手率={quote.turnover_rate}%, 流通比例={quote.float_ratio}%, elapsed={api_elapsed:.2f}s"
             )
             return quote
             

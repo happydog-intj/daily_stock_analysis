@@ -303,6 +303,11 @@ class AkshareFundamentalAdapter:
         }
 
         # Financial indicators
+        # stock_financial_abstract returns a wide-format DataFrame:
+        #   rows = financial indicators (identified by '指标' column)
+        #   columns = reporting periods (e.g. '20260331', '20251231', ...)
+        # We must look up values by indicator row name, NOT by column keyword.
+        # stock_financial_analysis_indicator (fallback) returns a normal row-per-stock table.
         fin_df, fin_source, fin_errors = self._call_df_candidates([
             ("stock_financial_abstract", {"symbol": stock_code}),
             ("stock_financial_analysis_indicator", {"symbol": stock_code}),
@@ -310,34 +315,105 @@ class AkshareFundamentalAdapter:
         ])
         result["errors"].extend(fin_errors)
         if fin_df is not None:
-            row = _extract_latest_row(fin_df, stock_code)
-            if row is not None:
-                revenue_yoy = _safe_float(_pick_by_keywords(row, ["营业收入同比", "营收同比", "收入同比", "同比增长"]))
-                profit_yoy = _safe_float(_pick_by_keywords(row, ["净利润同比", "净利同比", "归母净利润同比"]))
-                roe = _safe_float(_pick_by_keywords(row, ["净资产收益率", "ROE", "净资产收益"]))
-                gross_margin = _safe_float(_pick_by_keywords(row, ["毛利率"]))
-                report_date = _normalize_report_date(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["report_date"]))
-                revenue = _safe_float(_pick_by_keywords(row, ["营业总收入", "营业收入", "营收"]))
-                net_profit_parent = _safe_float(_pick_by_keywords(row, ["归母净利润", "母公司股东净利润", "净利润"]))
-                operating_cash_flow = _safe_float(
-                    _pick_by_keywords(row, ["经营活动产生的现金流量净额", "经营现金流", "经营活动现金流"])
+            # Detect wide-format: has '指标' column and date-like columns (8-digit strings)
+            is_wide_format = (
+                "指标" in fin_df.columns
+                and any(
+                    str(c).strip().isdigit() and len(str(c).strip()) == 8
+                    for c in fin_df.columns
                 )
-                result["growth"] = {
-                    "revenue_yoy": revenue_yoy,
-                    "net_profit_yoy": profit_yoy,
-                    "roe": roe,
-                    "gross_margin": gross_margin,
-                }
-                financial_report_payload = {
-                    "report_date": report_date,
-                    "revenue": revenue,
-                    "net_profit_parent": net_profit_parent,
-                    "operating_cash_flow": operating_cash_flow,
-                    "roe": roe,
-                }
-                if any(v is not None for v in financial_report_payload.values()):
-                    result["earnings"]["financial_report"] = financial_report_payload
-                result["source_chain"].append(f"growth:{fin_source}")
+            )
+            if is_wide_format:
+                # Wide format from stock_financial_abstract:
+                # index by '指标', use the latest date column (first date column)
+                date_cols = [
+                    c for c in fin_df.columns
+                    if str(c).strip().isdigit() and len(str(c).strip()) == 8
+                ]
+                if date_cols:
+                    latest_col = date_cols[0]  # most recent period first
+                    try:
+                        df_idx = fin_df.drop_duplicates(subset=["指标"]).set_index("指标")
+                    except Exception:
+                        df_idx = fin_df.set_index("指标")
+
+                    def _get_row_val(indicator: str) -> Optional[float]:
+                        if indicator not in df_idx.index:
+                            return None
+                        return _safe_float(df_idx.loc[indicator, latest_col])
+
+                    # YoY fields
+                    revenue_yoy = _get_row_val("营业总收入增长率")
+                    profit_yoy = _get_row_val("归属母公司净利润增长率")
+                    roe = _get_row_val("净资产收益率(ROE)")
+                    # gross_margin: prefer direct '毛利率' row; fallback to compute from revenue/cost
+                    gross_margin: Optional[float] = _get_row_val("毛利率")
+                    if gross_margin is None:
+                        revenue_raw = _get_row_val("营业总收入")
+                        op_cost_raw = _get_row_val("营业成本")
+                        if revenue_raw is not None and op_cost_raw is not None and revenue_raw != 0:
+                            gross_margin = round(
+                                (revenue_raw - op_cost_raw) / revenue_raw * 100, 4
+                            )
+                    revenue_raw = _get_row_val("营业总收入")
+                    net_profit_parent = _get_row_val("归母净利润")
+                    operating_cash_flow = _get_row_val("经营现金流量净额")
+                    # report_date: parse latest_col (YYYYMMDD)
+                    rd_str = str(latest_col).strip()
+                    if len(rd_str) == 8 and rd_str.isdigit():
+                        report_date: Optional[str] = f"{rd_str[:4]}-{rd_str[4:6]}-{rd_str[6:8]}"
+                    else:
+                        report_date = _normalize_report_date(latest_col)
+                    revenue = _safe_float(revenue_raw)
+                else:
+                    # Wide format but no date columns — fall back to row extraction
+                    row = _extract_latest_row(fin_df, stock_code)
+                    revenue_yoy = profit_yoy = roe = gross_margin = None
+                    revenue = net_profit_parent = operating_cash_flow = None
+                    report_date = None
+                    if row is not None:
+                        revenue_yoy = _safe_float(_pick_by_keywords(row, ["营业总收入增长率", "营业收入同比", "营收同比"]))
+                        profit_yoy = _safe_float(_pick_by_keywords(row, ["归属母公司净利润增长率", "净利润同比"]))
+                        roe = _safe_float(_pick_by_keywords(row, ["净资产收益率(ROE)", "净资产收益率", "ROE"]))
+                        gross_margin = _safe_float(_pick_by_keywords(row, ["毛利率"]))
+                        report_date = _normalize_report_date(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["report_date"]))
+                        revenue = _safe_float(_pick_by_keywords(row, ["营业总收入", "营业收入", "营收"]))
+                        net_profit_parent = _safe_float(_pick_by_keywords(row, ["归母净利润", "净利润"]))
+                        operating_cash_flow = _safe_float(_pick_by_keywords(row, ["经营现金流量净额", "经营现金流"]))
+            else:
+                # Normal row-per-stock format (e.g. stock_financial_analysis_indicator)
+                row = _extract_latest_row(fin_df, stock_code)
+                revenue_yoy = profit_yoy = roe = gross_margin = None
+                revenue = net_profit_parent = operating_cash_flow = None
+                report_date = None
+                if row is not None:
+                    revenue_yoy = _safe_float(_pick_by_keywords(row, ["营业收入同比", "营收同比", "收入同比", "同比增长"]))
+                    profit_yoy = _safe_float(_pick_by_keywords(row, ["净利润同比", "净利同比", "归母净利润同比"]))
+                    roe = _safe_float(_pick_by_keywords(row, ["净资产收益率", "ROE", "净资产收益"]))
+                    gross_margin = _safe_float(_pick_by_keywords(row, ["毛利率"]))
+                    report_date = _normalize_report_date(_pick_by_keywords(row, _DIVIDEND_KEYWORD_MAP["report_date"]))
+                    revenue = _safe_float(_pick_by_keywords(row, ["营业总收入", "营业收入", "营收"]))
+                    net_profit_parent = _safe_float(_pick_by_keywords(row, ["归母净利润", "母公司股东净利润", "净利润"]))
+                    operating_cash_flow = _safe_float(
+                        _pick_by_keywords(row, ["经营活动产生的现金流量净额", "经营现金流", "经营活动现金流"])
+                    )
+
+            result["growth"] = {
+                "revenue_yoy": revenue_yoy,
+                "net_profit_yoy": profit_yoy,
+                "roe": roe,
+                "gross_margin": gross_margin,
+            }
+            financial_report_payload = {
+                "report_date": report_date,
+                "revenue": round(revenue / 1e8, 2) if revenue is not None else None,
+                "net_profit_parent": round(net_profit_parent / 1e8, 2) if net_profit_parent is not None else None,
+                "operating_cash_flow": round(operating_cash_flow / 1e8, 2) if operating_cash_flow is not None else None,
+                "roe": roe,
+            }
+            if any(v is not None for v in financial_report_payload.values()):
+                result["earnings"]["financial_report"] = financial_report_payload
+            result["source_chain"].append(f"growth:{fin_source}")
 
         # Earnings forecast
         forecast_df, forecast_source, forecast_errors = self._call_df_candidates([
